@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intelligent KV Store | Operations</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0c1117; --panel:#151d26; --panel2:#1b2631; --line:#2b3947; --text:#edf2f5; --muted:#8998a7; --mint:#62e0af; --amber:#f2bb67; --red:#ff7777; --blue:#87b9e8; }
+    * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:linear-gradient(135deg,#111e2a 0%,var(--bg) 42%,#0a0e13 100%); color:var(--text); font:15px/1.45 "Segoe UI",sans-serif; }
+  main { width:min(1240px,100%); margin:auto; padding:32px 24px 56px; }
+  header { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding-bottom:24px; border-bottom:1px solid var(--line); }
+  .eyebrow,.label,h2,dt,code { font-family:Consolas,monospace; text-transform:uppercase; letter-spacing:.08em; }
+  .eyebrow { color:var(--mint); font-size:12px; margin:0 0 8px; }
+  h1 { font:500 clamp(2rem,5vw,4.5rem)/.95 Georgia,serif; margin:0; letter-spacing:0; }
+  .connection { display:flex; align-items:center; gap:10px; color:var(--muted); font-family:Consolas,monospace; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--amber); box-shadow:0 0 16px currentColor; }
+  .dot.live { color:var(--mint); background:var(--mint); }
+  .dot.dead { color:var(--red); background:var(--red); }
+  .hero { display:grid; grid-template-columns:1.35fr 1fr; gap:16px; margin:24px 0 16px; }
+  .panel { background:rgba(21,29,38,.88); border:1px solid var(--line); padding:22px; }
+  .panel h2 { color:var(--muted); font-size:12px; font-weight:400; margin:0 0 18px; }
+  .leader { display:flex; align-items:center; gap:18px; }
+  .leader-mark { display:grid; place-items:center; width:76px; height:76px; border:1px solid var(--mint); border-radius:50%; color:var(--mint); font:12px Consolas,monospace; }
+  .leader strong { display:block; font:500 2rem Georgia,serif; margin-bottom:5px; }
+  .muted { color:var(--muted); }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .stat { min-height:126px; }
+  .label { color:var(--muted); font-size:11px; }
+  .number { display:block; margin-top:20px; color:var(--amber); font:500 2rem Georgia,serif; }
+  .unit { color:var(--muted); font:12px Consolas,monospace; }
+  .lower { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+  .rows { display:grid; gap:0; }
+  .row { display:flex; justify-content:space-between; gap:18px; padding:12px 0; border-top:1px solid var(--line); font-family:Consolas,monospace; }
+  .row:first-child { border-top:0; }
+  .good { color:var(--mint); } .warn { color:var(--amber); } .bad { color:var(--red); }
+  .topology { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .node { padding:14px; background:var(--panel2); border-left:3px solid var(--muted); }
+  .node.leader { border-left-color:var(--mint); } .node.candidate { border-left-color:var(--amber); }
+  .node strong { display:block; margin-bottom:5px; }
+  pre { margin:0; max-height:180px; overflow:auto; color:var(--muted); font:12px/1.6 Consolas,monospace; white-space:pre-wrap; }
+  footer { margin-top:18px; color:var(--muted); font:12px Consolas,monospace; }
+    @media (max-width:820px) { .hero,.lower { grid-template-columns:1fr; } .cards { grid-template-columns:repeat(2,1fr); } .topology { grid-template-columns:1fr; } header { display:block; } .connection { margin-top:16px; } }
+    @media (max-width:480px) { main { padding:24px 14px 40px; } .cards { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><p class="eyebrow">Reliability console / live cluster</p><h1>Intelligent KV Store</h1></div>
+    <div class="connection"><span class="dot" id="dot"></span><span id="status">connecting to telemetry</span></div>
+  </header>
+
+  <div class="hero">
+    <section class="panel"><h2>Consensus status</h2><div class="leader"><div class="leader-mark" id="role-mark">RAFT</div><div><strong id="role">unknown</strong><span class="muted">term <span id="term">0</span> / commit <span id="commit">0</span> / applied <span id="applied">0</span></span></div></div></section>
+    <section class="panel"><h2>Recommendations</h2><div id="recommendation" class="muted">Waiting for telemetry.</div></section>
+  </div>
+
+  <div class="cards">
+  <section class="panel stat"><span class="label">Requests</span><strong class="number" id="requests">0</strong><span class="unit">total operations</span></section>
+  <section class="panel stat"><span class="label">Errors</span><strong class="number" id="errors">0</strong><span class="unit">server responses</span></section>
+  <section class="panel stat"><span class="label">P95 latency</span><strong class="number" id="p95">0</strong><span class="unit">seconds</span></section>
+    <section class="panel stat"><span class="label">Node health</span><strong class="number good" id="health">unknown</strong><span class="unit">process signal</span></section>
+  </div>
+
+  <div class="lower">
+    <section class="panel"><h2>Topology</h2><div class="topology" id="topology"><div class="node"><strong>current node</strong><span class="muted">waiting for state</span></div></div></section>
+    <section class="panel"><h2>Request mix</h2><div class="rows" id="request-mix"></div></section>
+  </div>
+  <section class="panel" style="margin-top:16px"><h2>Raw telemetry</h2><pre id="raw">waiting for /metrics</pre></section>
+  <footer>Refresh interval: 3 seconds · Data source: Prometheus text endpoint · No control-plane actions are executed from this view.</footer>
+</main>
+<script>
+const endpoint = new URLSearchParams(location.search).get('metrics') || 'http://127.0.0.1:9090/';
+const keys = ['kv_requests_total','kv_errors_total','kv_put_total','kv_get_total','kv_delete_total','raft_current_term','raft_commit_index','raft_applied_index','raft_is_leader','raft_is_candidate','raft_is_follower','node_up'];
+function parse(text) { const values = {}; text.trim().split('\n').forEach(line => { const match = line.match(/^([a-zA-Z0-9_]+)(?:\{[^}]+\})?\s+(.+)$/); if (match) values[match[1]] = Number(match[2]); }); return values; }
+function value(values,key) { return Number.isFinite(values[key]) ? values[key] : 0; }
+function render(text) {
+  const values = parse(text), role = value(values,'raft_is_leader') ? 'leader' : value(values,'raft_is_candidate') ? 'candidate' : value(values,'raft_is_follower') ? 'follower' : 'unknown';
+  document.querySelector('#dot').className='dot live'; document.querySelector('#status').textContent='live telemetry';
+  document.querySelector('#role').textContent=role; document.querySelector('#role-mark').textContent=role.toUpperCase();
+  document.querySelector('#term').textContent=value(values,'raft_current_term'); document.querySelector('#commit').textContent=value(values,'raft_commit_index'); document.querySelector('#applied').textContent=value(values,'raft_applied_index');
+  document.querySelector('#requests').textContent=value(values,'kv_requests_total'); document.querySelector('#errors').textContent=value(values,'kv_errors_total'); document.querySelector('#health').textContent=value(values,'node_up') ? 'healthy' : 'offline';
+  const p95 = text.match(/kv_request_latency_seconds\{quantile="0\.95"\}\s+([\d.e+-]+)/); document.querySelector('#p95').textContent=p95 ? Number(p95[1]).toFixed(4) : '0';
+  document.querySelector('#topology').innerHTML=`<div class="node ${role}"><strong>local node</strong><span class="${role==='leader'?'good':role==='candidate'?'warn':'muted'}">${role}</span><br><span class="muted">term ${value(values,'raft_current_term')}</span></div>`;
+  document.querySelector('#request-mix').innerHTML=['kv_put_total','kv_get_total','kv_delete_total'].map(key=>`<div class="row"><span>${key.replace('kv_','').replace('_total','')}</span><span class="value">${value(values,key)}</span></div>`).join('');
+  const errors=value(values,'kv_errors_total'); document.querySelector('#recommendation').textContent=errors ? 'Inspect recent request errors before increasing load.' : role==='leader' ? 'Leader is healthy and serving committed writes.' : 'This node is not currently the elected leader.'; document.querySelector('#recommendation').className=errors?'warn':'good';
+  document.querySelector('#raw').textContent=text||'no metrics';
+}
+async function refresh(){ try { const response=await fetch(endpoint,{cache:'no-store'}); if(!response.ok) throw new Error(response.status); render(await response.text()); } catch(error) { document.querySelector('#dot').className='dot dead'; document.querySelector('#status').textContent='metrics unavailable'; document.querySelector('#recommendation').textContent='Start the Go server or check the metrics URL.'; document.querySelector('#recommendation').className='bad'; } }
+refresh(); setInterval(refresh,3000);
+</script>
+</body>
+</html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intelligent KV Store</title>
+  <style>
+    :root { color-scheme: dark; --bg: #11161c; --panel: #1b232d; --line: #33404d; --text: #e7edf3; --muted: #91a0af; --green: #57d39b; --orange: #f4b860; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 15% 0%, #263a49, var(--bg) 46%); color: var(--text); font: 16px/1.5 Georgia, serif; }
+    main { max-width: 1080px; margin: auto; padding: 42px 24px 64px; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); padding-bottom: 24px; }
+    h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); font-weight: 500; letter-spacing: 0; }
+    .status { color: var(--green); font-family: Consolas, monospace; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    section { background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); padding: 20px; }
+    h2 { margin: 0 0 16px; font-size: 1rem; color: var(--muted); font-family: Consolas, monospace; font-weight: 400; text-transform: uppercase; }
+    .metric { display: flex; justify-content: space-between; padding: 9px 0; border-top: 1px solid #2a3540; font-family: Consolas, monospace; }
+    .metric:first-of-type { border-top: 0; }
+    .value { color: var(--orange); }
+    pre { min-height: 110px; margin: 0; white-space: pre-wrap; color: var(--muted); font-family: Consolas, monospace; }
+    @media (max-width: 760px) { header { display: block; } .grid { grid-template-columns: 1fr; } .status { display: block; margin-top: 12px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>Intelligent KV Store</h1><span class="status" id="status">connecting</span></header>
+  <div class="grid">
+    <section><h2>Cluster</h2><div class="metric"><span>Leader</span><span class="value">configured node</span></div><div class="metric"><span>Consensus</span><span class="value">Raft</span></div><div class="metric"><span>Storage</span><span class="value">LSM / WAL</span></div></section>
+    <section><h2>Requests</h2><div id="requests"><pre>waiting for metrics</pre></div></section>
+    <section><h2>Latency</h2><div id="latency"><pre>waiting for metrics</pre></div></section>
+  </div>
+  <section style="margin-top:16px"><h2>Raw telemetry</h2><pre id="raw">waiting for /metrics</pre></section>
+</main>
+<script>
+const endpoint = new URLSearchParams(location.search).get('metrics') || 'http://127.0.0.1:9090/';
+function render(text) {
+  const values = {};
+  text.trim().split('\n').forEach(line => { const match = line.match(/^([a-zA-Z0-9_]+)(?:\{[^}]+\})?\s+(.+)$/); if (match) values[match[1]] = match[2]; });
+  document.querySelector('#requests').innerHTML = ['kv_requests_total','kv_put_total','kv_get_total','kv_delete_total','kv_errors_total'].map(key => `<div class="metric"><span>${key}</span><span class="value">${values[key] || '0'}</span></div>`).join('');
+  document.querySelector('#latency').innerHTML = ['kv_request_latency_seconds'].map(key => `<div class="metric"><span>samples</span><span class="value">${values[key] || 'see raw telemetry'}</span></div>`).join('');
+  document.querySelector('#raw').textContent = text || 'no metrics';
+  document.querySelector('#status').textContent = 'live telemetry';
+}
+async function refresh() { try { render(await (await fetch(endpoint, {cache: 'no-store'})).text()); } catch (error) { document.querySelector('#status').textContent = 'metrics unavailable'; } }
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>
